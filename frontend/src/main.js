@@ -24,6 +24,7 @@ class TanYard extends LitElement {
     username: { type: String },
     password: { type: String },
     rowQuery: { type: String },
+    rowInput: { type: String },
     litIds: { type: Array },
     hitCount: { type: Number },
   };
@@ -53,6 +54,7 @@ class TanYard extends LitElement {
     this.username = "admin";
     this.password = "123456";
     this.rowQuery = "";
+    this.rowInput = "";
     this.litIds = [];
     this.hitCount = 0;
   }
@@ -117,14 +119,39 @@ class TanYard extends LitElement {
 
   async runRowSearch() {
     this.err = "";
+    const q = this.rowQuery.trim();
+    // 清空关键字：点亮与底栏一起清零，不保留上一次结果
+    if (!q) {
+      this.litIds = [];
+      this.hitCount = 0;
+      return;
+    }
     try {
-      const q = this.rowQuery.trim();
-      const local = (this.board?.pits || [])
-        .filter((p) => q && String(p.row).includes(q))
-        .map((p) => p.id);
-      this.litIds = Array.from(new Set([...(q ? this.litIds : this.litIds), ...local]));
+      // 点亮集合与底栏个数同取服务器返回（整数精确匹配），不再本地按字符串包含另算
       const data = await api(`/api/pits/search-row?q=${encodeURIComponent(q)}`);
+      this.litIds = data.ids;
       this.hitCount = data.hitCount;
+    } catch (ex) {
+      this.err = ex.message;
+    }
+  }
+
+  async setRow() {
+    this.err = "";
+    const row = Number(this.rowInput);
+    if (!Number.isInteger(row)) {
+      this.err = "行号须为整数";
+      return;
+    }
+    try {
+      this.picked = await api(`/api/pits/${this.picked.id}/row`, {
+        method: "POST",
+        body: JSON.stringify({ row }),
+      });
+      // 行号变了，旧的查找结果作废，需重新查找
+      this.litIds = [];
+      this.hitCount = 0;
+      await this.refresh();
     } catch (ex) {
       this.err = ex.message;
     }
@@ -177,6 +204,10 @@ class TanYard extends LitElement {
               <button @click=${() => this.setStatus("tanning")}>鞣制中</button>
               <button @click=${() => this.setStatus("drained")}>已放液</button>
             </div>
+            <label>改行号（整数）
+              <input placeholder="新行号" .value=${this.rowInput} @input=${(e) => (this.rowInput = e.target.value)} />
+              <button type="button" @click=${this.setRow}>改行号</button>
+            </label>
           </section>`
         : ""}
       ${this.err ? html`<p class="err">${this.err}</p>` : ""}

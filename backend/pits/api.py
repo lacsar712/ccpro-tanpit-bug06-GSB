@@ -1,3 +1,4 @@
+from django.db import transaction
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError
 
@@ -20,6 +21,10 @@ class SampleIn(Schema):
 
 class StatusIn(Schema):
     status: str
+
+
+class RowIn(Schema):
+    row: int
 
 
 def pit_json(pit: Pit) -> dict:
@@ -55,12 +60,30 @@ def health(request):
 
 @api.get("/pits/search-row", auth=auth)
 def search_row(request, q: str = ""):
-    yard = Yard.objects.prefetch_related("pits").first()
+    yard = Yard.objects.first()
     if yard is None:
         raise HttpError(404, "尚无鞣场")
     key = (q or "").strip()
-    hits = [p for p in yard.pits.all() if key and key in str(p.row)]
-    return {"q": key, "hitCount": len(hits), "ids": [p.id for p in hits]}
+    try:
+        row_num = int(key)
+    except (TypeError, ValueError):
+        return {"q": key, "hitCount": 0, "ids": []}
+    # 行号按整数精确比对，不做字符串包含（1 不匹配 10）；计数与点亮取同一份结果
+    ids = list(yard.pits.filter(row=row_num).values_list("id", flat=True))
+    return {"q": key, "hitCount": len(ids), "ids": ids}
+
+
+@api.post("/pits/{pit_id}/row", auth=auth)
+def set_row(request, pit_id: int, payload: RowIn):
+    # 行级锁串行化并发改号：两名工同时改同一坑时只提交一版
+    with transaction.atomic():
+        pit = Pit.objects.select_for_update().filter(id=pit_id).first()
+        if pit is None:
+            raise HttpError(404, "坑不存在")
+        pit.row = payload.row
+        pit.save(update_fields=["row"])
+    pit.refresh_from_db()
+    return pit_json(pit)
 
 
 @api.get("/board", auth=auth)
