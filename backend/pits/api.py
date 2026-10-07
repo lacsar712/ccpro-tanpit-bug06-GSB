@@ -59,8 +59,13 @@ def search_row(request, q: str = ""):
     if yard is None:
         raise HttpError(404, "尚无鞣场")
     key = (q or "").strip()
-    hits = [p for p in yard.pits.all() if key and key in str(p.row)]
-    return {"q": key, "hitCount": len(hits), "ids": [p.id for p in hits]}
+    try:
+        row = int(key)
+    except ValueError:
+        # 空关键字或非整数：没有任何行号与它精确相等
+        return {"q": key, "hitCount": 0, "ids": []}
+    ids = list(yard.pits.filter(row=row).values_list("id", flat=True))
+    return {"q": key, "hitCount": len(ids), "ids": ids}
 
 
 @api.get("/board", auth=auth)

@@ -117,14 +117,12 @@ class TanYard extends LitElement {
 
   async runRowSearch() {
     this.err = "";
+    const q = this.rowQuery.trim();
     try {
-      const q = this.rowQuery.trim();
-      const local = (this.board?.pits || [])
-        .filter((p) => q && String(p.row).includes(q))
-        .map((p) => p.id);
-      this.litIds = Array.from(new Set([...(q ? this.litIds : this.litIds), ...local]));
+      // 行号按整数精确匹配：以服务端结果为唯一口径，点亮与底栏计数必然一致
       const data = await api(`/api/pits/search-row?q=${encodeURIComponent(q)}`);
-      this.hitCount = data.hitCount;
+      this.litIds = data.ids || [];
+      this.hitCount = data.hitCount ?? 0;
     } catch (ex) {
       this.err = ex.message;
     }
